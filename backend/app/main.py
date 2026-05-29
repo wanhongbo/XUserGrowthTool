@@ -51,9 +51,17 @@ def me(email: str = Depends(require_auth)) -> dict:
 
 @app.get("/api/overview", response_model=OverviewOut)
 def overview(_: str = Depends(require_auth), db: Session = Depends(get_db)) -> dict:
-    live_user_ids = select(XPost.author_id).where(XPost.query_source != "sample").distinct()
     live_task_ids = select(EngagementTask.id).join(XPost, EngagementTask.source_post_id == XPost.x_post_id).where(XPost.query_source != "sample")
-    leads = db.scalar(select(func.count(XUser.id)).where(XUser.id.in_(live_user_ids))) or 0
+    lead_user_ids = (
+        select(EngagementTask.user_id)
+        .join(XPost, EngagementTask.source_post_id == XPost.x_post_id)
+        .where(
+            XPost.query_source != "sample",
+            EngagementTask.status.not_in([TaskStatus.done, TaskStatus.rejected, TaskStatus.opt_out]),
+        )
+        .distinct()
+    )
+    leads = db.scalar(select(func.count(XUser.id)).where(XUser.id.in_(lead_user_ids))) or 0
     review_tasks = db.scalar(select(func.count(EngagementTask.id)).where(EngagementTask.id.in_(live_task_ids), EngagementTask.status == TaskStatus.review)) or 0
     public_tasks = db.scalar(select(func.count(EngagementTask.id)).where(EngagementTask.id.in_(live_task_ids), EngagementTask.task_type == TaskType.public_interaction)) or 0
     dm_tasks = db.scalar(select(func.count(EngagementTask.id)).where(EngagementTask.id.in_(live_task_ids), EngagementTask.task_type == TaskType.dm_draft)) or 0
@@ -115,10 +123,19 @@ def delete_sample_data(_: str = Depends(require_auth), db: Session = Depends(get
 
 @app.get("/api/leads", response_model=list[LeadCandidateOut])
 def leads(_: str = Depends(require_auth), db: Session = Depends(get_db)) -> list[dict]:
+    active_lead_user_ids = (
+        select(EngagementTask.user_id)
+        .join(XPost, EngagementTask.source_post_id == XPost.x_post_id)
+        .where(
+            XPost.query_source != "sample",
+            EngagementTask.status.not_in([TaskStatus.done, TaskStatus.rejected, TaskStatus.opt_out]),
+        )
+        .distinct()
+    )
     users = db.scalars(
         select(XUser)
         .options(joinedload(XUser.score), joinedload(XUser.dm_eligibility))
-        .where(XUser.id.in_(select(XPost.author_id).where(XPost.query_source != "sample").distinct()))
+        .where(XUser.id.in_(active_lead_user_ids))
         .outerjoin(LeadScore)
         .order_by(func.coalesce(LeadScore.final_score, 0).desc())
     ).unique().all()

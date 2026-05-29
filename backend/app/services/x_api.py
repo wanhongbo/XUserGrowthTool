@@ -9,11 +9,11 @@ from app.config import get_settings
 
 
 DEFAULT_QUERIES = [
-    '("private photos" OR "photo vault" OR "secure photo storage" OR "encrypted photos") lang:en place_country:US -is:retweet',
-    '("encrypted gallery" OR "private gallery" OR "secure gallery" OR "hidden photos") lang:en place_country:US -is:retweet',
-    '("Google Photos alternative" OR "iCloud Photos privacy" OR "photo backup privacy") lang:en place_country:US -is:retweet',
-    '("EXIF privacy" OR "metadata removal" OR "remove location from photos") lang:en place_country:US -is:retweet',
-    '("end-to-end encrypted photos" OR "encrypted photo backup" OR "cloud photo privacy") lang:en place_country:US -is:retweet',
+    '("private photos" OR "photo vault" OR "secure photo storage" OR "encrypted photos") lang:en -is:retweet',
+    '("encrypted gallery" OR "private gallery" OR "secure gallery" OR "hidden photos") lang:en -is:retweet',
+    '("Google Photos alternative" OR "iCloud Photos privacy" OR "photo backup privacy") lang:en -is:retweet',
+    '("EXIF privacy" OR "metadata removal" OR "remove location from photos") lang:en -is:retweet',
+    '("end-to-end encrypted photos" OR "encrypted photo backup" OR "cloud photo privacy") lang:en -is:retweet',
 ]
 
 
