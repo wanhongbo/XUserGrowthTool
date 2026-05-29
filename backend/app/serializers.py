@@ -1,6 +1,7 @@
 import json
 
 from app.models import DmEligibility, EngagementTask, LeadScore, XPost, XUser
+from app.services.discovery import us_confidence_for_user
 
 
 def _json(value: str) -> dict:
@@ -49,6 +50,7 @@ def user_out(user: XUser) -> dict:
         "verified_type": user.verified_type,
         "protected": user.protected,
         "opt_out": user.opt_out,
+        "us_confidence": us_confidence_for_user({"location": user.location}),
         "metrics": _json(user.metrics_json),
         "last_seen": user.last_seen,
         "score": score_out(user.score),
@@ -84,4 +86,3 @@ def task_out(task: EngagementTask, source_post: XPost | None = None) -> dict:
         "user": user_out(task.user),
         "source_post": post_out(source_post) if source_post else None,
     }
-

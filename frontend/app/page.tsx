@@ -337,6 +337,7 @@ function LeadRow({ lead }: { lead: LeadCandidate }) {
         <p className="muted" style={{ marginTop: 5 }}>{lead.user.bio || "No bio captured"}</p>
         <div className="badges">
           <span className="badge">{lead.open_tasks} open task(s)</span>
+          <span className={`badge ${lead.user.us_confidence === "high" ? "good" : "warn"}`}>{lead.user.us_confidence === "high" ? "US high" : "US unknown"}</span>
           <span className={`badge ${dm?.is_eligible ? "good" : "warn"}`}>{dm?.is_eligible ? "DM eligible" : "DM blocked"}</span>
           {lead.user.verified ? <span className="badge good"><UserRoundCheck size={13} aria-hidden="true" /> verified</span> : null}
           {lead.user.score?.risk ? <span className={`badge ${lead.user.score.risk > 40 ? "danger" : "warn"}`}>risk {lead.user.score.risk}</span> : null}
@@ -373,6 +374,7 @@ function TaskRow({
           </h3>
           <div className="task-meta">
             <span className="badge">{task.status}</span>
+            <span className={`badge ${task.user.us_confidence === "high" ? "good" : "warn"}`}>{task.user.us_confidence === "high" ? "US high" : "US unknown"}</span>
             <span className={`badge ${isDm && !dmAllowed ? "danger" : "good"}`}>{isDm ? (dmAllowed ? "eligible evidence present" : "blocked by DM gate") : "manual send only"}</span>
           </div>
         </div>

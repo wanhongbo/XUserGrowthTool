@@ -60,6 +60,7 @@ class UserOut(BaseModel):
     verified_type: str
     protected: bool
     opt_out: bool
+    us_confidence: Literal["high", "unknown", "non_us"]
     metrics: dict[str, Any]
     last_seen: datetime
     score: ScoreOut | None = None

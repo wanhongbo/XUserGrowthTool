@@ -28,6 +28,7 @@ export type XUser = {
   verified_type: string;
   protected: boolean;
   opt_out: boolean;
+  us_confidence: "high" | "unknown" | "non_us";
   metrics: Record<string, number>;
   last_seen: string;
   score: Score | null;

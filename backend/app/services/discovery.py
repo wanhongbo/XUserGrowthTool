@@ -45,12 +45,68 @@ US_LOCATION_PATTERNS = [
     r"\b(new york|ny|ca|tx|fl|wa|or|co|ma|il|ga|pa|az|nc|nj|va|mi|oh)\b",
 ]
 
+NON_US_LOCATION_PATTERNS = [
+    r"\bvietnam\b",
+    r"\bho chi minh\b",
+    r"\bhanoi\b",
+    r"\blondon\b",
+    r"\buk\b",
+    r"\bunited kingdom\b",
+    r"\bcanada\b",
+    r"\btoronto\b",
+    r"\bvancouver\b",
+    r"\bindia\b",
+    r"\bdelhi\b",
+    r"\bmumbai\b",
+    r"\bsingapore\b",
+    r"\baustralia\b",
+    r"\bsydney\b",
+    r"\bmelbourne\b",
+    r"\bgermany\b",
+    r"\bberlin\b",
+    r"\bfrance\b",
+    r"\bparis\b",
+    r"\bjapan\b",
+    r"\btokyo\b",
+    r"\bkorea\b",
+    r"\bseoul\b",
+    r"\bchina\b",
+    r"\bbeijing\b",
+    r"\bshanghai\b",
+    r"\bhong kong\b",
+    r"\btaiwan\b",
+    r"\btaipei\b",
+    r"\bphilippines\b",
+    r"\bmanila\b",
+    r"\bbrazil\b",
+    r"\bmexico\b",
+    r"\beurope\b",
+    r"\bglobal\b",
+]
+
 
 def is_probably_us_user(payload: dict) -> bool:
     location = str(payload.get("location") or "").strip().lower()
     if not location:
         return False
     return any(re.search(pattern, location, flags=re.IGNORECASE) for pattern in US_LOCATION_PATTERNS)
+
+
+def is_probably_non_us_user(payload: dict) -> bool:
+    location = str(payload.get("location") or "").strip().lower()
+    if not location:
+        return False
+    if is_probably_us_user(payload):
+        return False
+    return any(re.search(pattern, location, flags=re.IGNORECASE) for pattern in NON_US_LOCATION_PATTERNS)
+
+
+def us_confidence_for_user(payload: dict) -> str:
+    if is_probably_us_user(payload):
+        return "high"
+    if is_probably_non_us_user(payload):
+        return "non_us"
+    return "unknown"
 
 
 def _hash_text(text: str) -> str:
@@ -167,6 +223,7 @@ async def run_x_discovery(db: Session, queries: list[str] | None, max_results: i
     warnings: list[str] = []
     users_count = posts_count = tasks_count = 0
     skipped_non_us = 0
+    kept_unknown_location = 0
 
     for query in queries or DEFAULT_QUERIES:
         payload = await client.recent_search(query, max_results=max_results)
@@ -176,9 +233,12 @@ async def run_x_discovery(db: Session, queries: list[str] | None, max_results: i
             if not author_payload:
                 warnings.append(f"Missing author for post {post_payload.get('id')}")
                 continue
-            if not is_probably_us_user(author_payload):
+            us_confidence = us_confidence_for_user(author_payload)
+            if us_confidence == "non_us":
                 skipped_non_us += 1
                 continue
+            if us_confidence == "unknown":
+                kept_unknown_location += 1
             user = _upsert_user(db, author_payload)
             users_count += 1
             db.flush()
@@ -189,7 +249,9 @@ async def run_x_discovery(db: Session, queries: list[str] | None, max_results: i
     for user in db.scalars(select(XUser)).all():
         tasks_count += _score_and_task(db, user)
     if skipped_non_us:
-        warnings.append(f"Skipped {skipped_non_us} author(s) without a US profile location signal.")
+        warnings.append(f"Skipped {skipped_non_us} author(s) with clear non-US profile locations.")
+    if kept_unknown_location:
+        warnings.append(f"Kept {kept_unknown_location} author(s) with unknown/empty profile locations because X does not provide reliable country data.")
     db.add(AuditEvent(action="discovery.x_api", entity_type="discovery", entity_id="x_api", detail=f"Queries: {queries or DEFAULT_QUERIES}"))
     db.commit()
     return users_count, posts_count, tasks_count, warnings
