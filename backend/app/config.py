@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     auth_secret: str = "change-me-in-production"
     auth_token_ttl_seconds: int = 604800
     x_bearer_token: str = ""
-    discovery_mode: str = "sample"
+    discovery_mode: str = "x_api"
     outbound_proxy: str = ""
     max_public_tasks_per_day: int = 20
     max_dm_tasks_per_day: int = 5

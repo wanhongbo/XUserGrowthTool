@@ -8,17 +8,26 @@ from dataclasses import dataclass
 from app.models import XPost, XUser
 
 KEYWORDS = {
-    "privacy": 1.0,
-    "signal": 1.0,
-    "proton": 1.0,
-    "end-to-end encryption": 1.2,
-    "e2ee": 1.2,
-    "cybersecurity": 1.0,
-    "infosec": 1.0,
-    "surveillance": 0.9,
-    "data broker": 1.1,
-    "zero knowledge": 1.1,
-    "threat model": 1.1,
+    "private photos": 1.5,
+    "photo vault": 1.6,
+    "secure photo storage": 1.6,
+    "encrypted photos": 1.6,
+    "encrypted gallery": 1.5,
+    "private gallery": 1.4,
+    "secure gallery": 1.3,
+    "hidden photos": 1.2,
+    "hide photos": 1.2,
+    "photo privacy": 1.4,
+    "photo backup privacy": 1.5,
+    "google photos alternative": 1.6,
+    "icloud photos privacy": 1.5,
+    "exif privacy": 1.3,
+    "metadata removal": 1.2,
+    "remove location from photos": 1.4,
+    "end-to-end encrypted photos": 1.7,
+    "encrypted photo backup": 1.6,
+    "cloud photo privacy": 1.4,
+    "private family photos": 1.4,
 }
 
 INTENT_PATTERNS = [
@@ -30,6 +39,11 @@ INTENT_PATTERNS = [
     r"\bany recommendations\b",
     r"\bcan someone recommend\b",
     r"\bneed a (tool|product|service|solution)\b",
+    r"\balternative to\b",
+    r"\bswitching from\b",
+    r"\btired of google photos\b",
+    r"\bsecure backup\b",
+    r"\bhow (do|can) i hide photos\b",
 ]
 
 DM_INTENT_PATTERNS = [
@@ -63,6 +77,7 @@ class ScoreResult:
     dm_eligible: bool
     dm_reason: str
     evidence_post_id: str
+    product_relevant: bool
 
 
 def _contains_any(patterns: list[str], text: str) -> bool:
@@ -86,6 +101,7 @@ def _metrics(user: XUser) -> dict:
 def score_user(user: XUser, posts: list[XPost]) -> ScoreResult:
     corpus = " ".join([user.bio or "", *[post.text for post in posts]])
     relevance, hits = _keyword_score(corpus)
+    product_relevant = bool(hits)
     activity = min(100.0, len(posts) * 18)
 
     metrics = _metrics(user)
@@ -109,10 +125,12 @@ def score_user(user: XUser, posts: list[XPost]) -> ScoreResult:
         risk += 20
     risk = min(100.0, risk)
 
-    final = max(0.0, (relevance * 0.34) + (activity * 0.18) + (influence * 0.18) + (intent * 0.22) - (risk * 0.28))
+    final = max(0.0, (relevance * 0.38) + (activity * 0.14) + (influence * 0.16) + (intent * 0.24) - (risk * 0.34))
     reason_bits = []
     if hits:
         reason_bits.append(f"topic hits: {', '.join(hits)}")
+    else:
+        reason_bits.append("no photo privacy product keyword hit")
     reason_bits.append(f"{len(posts)} recent matching post(s)")
     if intent_post:
         reason_bits.append("public intent signal detected")
@@ -121,7 +139,7 @@ def score_user(user: XUser, posts: list[XPost]) -> ScoreResult:
     if risk:
         reason_bits.append(f"risk flags: {int(risk)}")
 
-    dm_eligible = bool(dm_intent_post and not user.opt_out and risk < 60)
+    dm_eligible = bool(product_relevant and dm_intent_post and not user.opt_out and risk < 40)
     if dm_eligible:
         dm_reason = "User publicly indicated they are open to contact/DM."
         evidence_post_id = dm_intent_post.x_post_id
@@ -143,5 +161,5 @@ def score_user(user: XUser, posts: list[XPost]) -> ScoreResult:
         dm_eligible=dm_eligible,
         dm_reason=dm_reason,
         evidence_post_id=evidence_post_id,
+        product_relevant=product_relevant,
     )
-

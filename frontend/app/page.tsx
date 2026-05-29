@@ -31,7 +31,6 @@ import {
   optOut,
   regenerateDraft,
   runLiveDiscovery,
-  runSampleDiscovery,
   updateTask,
 } from "@/lib/api";
 
@@ -97,22 +96,6 @@ export default function Home() {
 
   const topLeads = useMemo(() => leads.slice(0, 8), [leads]);
   const activeTasks = useMemo(() => tasks.filter((task) => !["done", "rejected", "opt_out"].includes(task.status)), [tasks]);
-
-  async function seed() {
-    setNotice("Running sample discovery...");
-    try {
-      const result = await runSampleDiscovery();
-      setNotice(`Discovery complete: ${result.users_upserted} users, ${result.posts_upserted} posts, ${result.tasks_created} new tasks.`);
-      await refresh();
-    } catch (error) {
-      if (error instanceof AuthError) {
-        setSessionEmail(null);
-        setNotice("Session expired. Please sign in again.");
-        return;
-      }
-      setNotice(error instanceof Error ? error.message : "Discovery failed");
-    }
-  }
 
   async function runLive() {
     setNotice("Running live X discovery...");
@@ -214,12 +197,8 @@ export default function Home() {
               <LogOut size={17} aria-hidden="true" />
               Sign out
             </button>
-            <button className="primary-button" type="button" onClick={seed}>
-              <DatabaseZap size={17} aria-hidden="true" />
-              Run Sample Discovery
-            </button>
             <button className="primary-button" type="button" onClick={runLive}>
-              <RefreshCw size={17} aria-hidden="true" />
+              <DatabaseZap size={17} aria-hidden="true" />
               Run Live X Discovery
             </button>
           </div>
@@ -234,16 +213,7 @@ export default function Home() {
           <Metric label="DM Drafts" value={overview?.dm_tasks ?? 0} />
           <Metric label="Opt-outs" value={overview?.opt_outs ?? 0} />
           <Metric label="Blocked DM" value={overview?.compliance_blocks ?? 0} />
-          <Metric label="Sample Posts" value={overview?.sample_posts ?? 0} />
-          <Metric label="Live Posts" value={overview?.live_posts ?? 0} />
         </section>
-
-        {overview?.has_sample_data && !overview.has_live_data ? (
-          <section className="policy-band">
-            <AlertTriangle size={22} aria-hidden="true" />
-            <p>This workspace currently shows sample/demo data only. Click Run Live X Discovery to fetch real X API data.</p>
-          </section>
-        ) : null}
 
         <section className="policy-band" id="compliance">
           <ShieldCheck size={24} aria-hidden="true" />
@@ -262,7 +232,7 @@ export default function Home() {
               <span className="badge">{loading ? "Loading" : `${topLeads.length} visible`}</span>
             </div>
             <div className="lead-list">
-              {topLeads.length ? topLeads.map((lead) => <LeadRow lead={lead} key={lead.user.x_user_id} />) : <Empty text="Run sample discovery or connect an X API token." />}
+              {topLeads.length ? topLeads.map((lead) => <LeadRow lead={lead} key={lead.user.x_user_id} />) : <Empty text="Run Live X Discovery or check the X API token." />}
             </div>
           </section>
 
@@ -367,7 +337,6 @@ function LeadRow({ lead }: { lead: LeadCandidate }) {
         <p className="muted" style={{ marginTop: 5 }}>{lead.user.bio || "No bio captured"}</p>
         <div className="badges">
           <span className="badge">{lead.open_tasks} open task(s)</span>
-          <span className={`badge ${lead.posts[0]?.query_source === "sample" ? "warn" : "good"}`}>{lead.posts[0]?.query_source === "sample" ? "sample data" : "live X data"}</span>
           <span className={`badge ${dm?.is_eligible ? "good" : "warn"}`}>{dm?.is_eligible ? "DM eligible" : "DM blocked"}</span>
           {lead.user.verified ? <span className="badge good"><UserRoundCheck size={13} aria-hidden="true" /> verified</span> : null}
           {lead.user.score?.risk ? <span className={`badge ${lead.user.score.risk > 40 ? "danger" : "warn"}`}>risk {lead.user.score.risk}</span> : null}
@@ -404,7 +373,6 @@ function TaskRow({
           </h3>
           <div className="task-meta">
             <span className="badge">{task.status}</span>
-            <span className={`badge ${task.source_post?.query_source === "sample" ? "warn" : "good"}`}>{task.source_post?.query_source === "sample" ? "sample data" : "live X data"}</span>
             <span className={`badge ${isDm && !dmAllowed ? "danger" : "good"}`}>{isDm ? (dmAllowed ? "eligible evidence present" : "blocked by DM gate") : "manual send only"}</span>
           </div>
         </div>

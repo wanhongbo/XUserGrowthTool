@@ -24,3 +24,14 @@ def test_other_email_is_rejected():
     response = client.post("/api/auth/login", json={"email": "someone@example.com"})
     assert response.status_code == 403
 
+
+def test_sample_discovery_mode_is_not_available():
+    login = client.post("/api/auth/login", json={"email": "wanhongbo137@gmail.com"})
+    token = login.json()["token"]
+
+    response = client.post(
+        "/api/discover/run",
+        json={"mode": "sample"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 422

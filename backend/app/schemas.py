@@ -7,7 +7,7 @@ from app.models import TaskStatus, TaskType
 
 
 class DiscoveryRequest(BaseModel):
-    mode: Literal["sample", "x_api"] | None = None
+    mode: Literal["x_api"] | None = None
     queries: list[str] | None = None
     max_results: int = Field(default=25, ge=10, le=100)
 
@@ -119,7 +119,9 @@ class OverviewOut(BaseModel):
     dm_tasks: int
     opt_outs: int
     compliance_blocks: int
-    sample_posts: int
-    live_posts: int
-    has_sample_data: bool
-    has_live_data: bool
+
+
+class CleanupResult(BaseModel):
+    sample_posts_deleted: int
+    tasks_deleted: int
+    users_deleted: int

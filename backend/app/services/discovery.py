@@ -14,54 +14,6 @@ from app.services.scoring import score_user
 from app.services.x_api import DEFAULT_QUERIES, XApiClient, parse_x_datetime
 
 
-SAMPLE_USERS = [
-    {
-        "id": "1001",
-        "username": "privacyrosa",
-        "name": "Rosa Chen",
-        "description": "Privacy engineer. E2EE, usable security, anti-surveillance.",
-        "public_metrics": {"followers_count": 8200, "following_count": 640, "tweet_count": 12900},
-        "verified": True,
-        "verified_type": "blue",
-        "receives_your_dm": True,
-        "protected": False,
-        "posts": [
-            "Threat model first, tool second. Still looking for good examples of zero knowledge onboarding that normal people understand. My DMs are open for examples.",
-            "Signal gets the human side of privacy right more often than most security products.",
-        ],
-    },
-    {
-        "id": "1002",
-        "username": "packetjanitor",
-        "name": "Mika",
-        "description": "Cybersecurity analyst, detection engineering, privacy curious.",
-        "public_metrics": {"followers_count": 2300, "following_count": 990, "tweet_count": 4200},
-        "verified": False,
-        "verified_type": "",
-        "receives_your_dm": False,
-        "protected": False,
-        "posts": [
-            "Any recommendations for privacy-preserving analytics that do not become a data broker nightmare?",
-            "Infosec tooling still underestimates UX costs.",
-        ],
-    },
-    {
-        "id": "1003",
-        "username": "growthblast",
-        "name": "Growth Blast",
-        "description": "Discount code affiliate growth. Follow for follow and buy followers.",
-        "public_metrics": {"followers_count": 52, "following_count": 9001, "tweet_count": 76000},
-        "verified": False,
-        "verified_type": "",
-        "receives_your_dm": True,
-        "protected": False,
-        "posts": [
-            "Cybersecurity affiliate discount code. Follow for follow.",
-        ],
-    },
-]
-
-
 def _hash_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
@@ -132,7 +84,7 @@ def _score_and_task(db: Session, user: XUser) -> int:
 
     created = 0
     source_post = posts[0] if posts else None
-    if result.final_score >= 35 and not user.opt_out and source_post:
+    if result.product_relevant and result.final_score >= 45 and result.risk < 50 and not user.opt_out and source_post:
         created += _ensure_task(db, user, TaskType.public_interaction, TaskStatus.review, source_post)
     if result.dm_eligible and source_post:
         evidence_post = next((post for post in posts if post.x_post_id == result.evidence_post_id), source_post)
@@ -168,33 +120,6 @@ def _ensure_task(db: Session, user: XUser, task_type: TaskType, status: TaskStat
     )
     db.add(task)
     return 1
-
-
-def run_sample_discovery(db: Session) -> tuple[int, int, int]:
-    users, posts, tasks = 0, 0, 0
-    for sample in SAMPLE_USERS:
-        user = _upsert_user(db, sample)
-        users += 1
-        db.flush()
-        for index, text in enumerate(sample["posts"]):
-            _upsert_post(
-                db,
-                user,
-                {
-                    "id": f"{sample['id']}{index}",
-                    "text": text,
-                    "lang": "en",
-                    "public_metrics": {"reply_count": 4 + index, "like_count": 20 + index * 11, "quote_count": index},
-                    "created_at": datetime.utcnow().isoformat(),
-                },
-                "sample",
-            )
-            posts += 1
-        db.flush()
-        tasks += _score_and_task(db, user)
-    db.add(AuditEvent(action="discovery.sample", entity_type="discovery", entity_id="sample", detail="Seeded sample discovery data"))
-    db.commit()
-    return users, posts, tasks
 
 
 async def run_x_discovery(db: Session, queries: list[str] | None, max_results: int) -> tuple[int, int, int, list[str]]:

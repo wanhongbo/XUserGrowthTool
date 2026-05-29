@@ -7,9 +7,9 @@ from app.auth import create_token, require_auth
 from app.config import get_cors_origins, get_settings
 from app.database import Base, engine, get_db
 from app.models import AuditEvent, DmEligibility, EngagementTask, LeadScore, TaskStatus, TaskType, XPost, XUser
-from app.schemas import AuthOut, DiscoveryRequest, DiscoveryResult, LeadCandidateOut, LoginRequest, OptOutRequest, OverviewOut, TaskOut, TaskUpdate
+from app.schemas import AuthOut, CleanupResult, DiscoveryRequest, DiscoveryResult, LeadCandidateOut, LoginRequest, OptOutRequest, OverviewOut, TaskOut, TaskUpdate
 from app.serializers import post_out, task_out, user_out
-from app.services.discovery import run_sample_discovery, run_x_discovery
+from app.services.discovery import run_x_discovery
 from app.services.drafts import draft_for_task
 from app.services.x_api import XApiError
 
@@ -51,14 +51,14 @@ def me(email: str = Depends(require_auth)) -> dict:
 
 @app.get("/api/overview", response_model=OverviewOut)
 def overview(_: str = Depends(require_auth), db: Session = Depends(get_db)) -> dict:
-    leads = db.scalar(select(func.count(XUser.id))) or 0
-    review_tasks = db.scalar(select(func.count(EngagementTask.id)).where(EngagementTask.status == TaskStatus.review)) or 0
-    public_tasks = db.scalar(select(func.count(EngagementTask.id)).where(EngagementTask.task_type == TaskType.public_interaction)) or 0
-    dm_tasks = db.scalar(select(func.count(EngagementTask.id)).where(EngagementTask.task_type == TaskType.dm_draft)) or 0
+    live_user_ids = select(XPost.author_id).where(XPost.query_source != "sample").distinct()
+    live_task_ids = select(EngagementTask.id).join(XPost, EngagementTask.source_post_id == XPost.x_post_id).where(XPost.query_source != "sample")
+    leads = db.scalar(select(func.count(XUser.id)).where(XUser.id.in_(live_user_ids))) or 0
+    review_tasks = db.scalar(select(func.count(EngagementTask.id)).where(EngagementTask.id.in_(live_task_ids), EngagementTask.status == TaskStatus.review)) or 0
+    public_tasks = db.scalar(select(func.count(EngagementTask.id)).where(EngagementTask.id.in_(live_task_ids), EngagementTask.task_type == TaskType.public_interaction)) or 0
+    dm_tasks = db.scalar(select(func.count(EngagementTask.id)).where(EngagementTask.id.in_(live_task_ids), EngagementTask.task_type == TaskType.dm_draft)) or 0
     opt_outs = db.scalar(select(func.count(XUser.id)).where(XUser.opt_out.is_(True))) or 0
     compliance_blocks = db.scalar(select(func.count(DmEligibility.id)).where(DmEligibility.is_eligible.is_(False))) or 0
-    sample_posts = db.scalar(select(func.count(XPost.id)).where(XPost.query_source == "sample")) or 0
-    live_posts = db.scalar(select(func.count(XPost.id)).where(XPost.query_source != "sample")) or 0
     return {
         "leads": leads,
         "review_tasks": review_tasks,
@@ -66,19 +66,12 @@ def overview(_: str = Depends(require_auth), db: Session = Depends(get_db)) -> d
         "dm_tasks": dm_tasks,
         "opt_outs": opt_outs,
         "compliance_blocks": compliance_blocks,
-        "sample_posts": sample_posts,
-        "live_posts": live_posts,
-        "has_sample_data": sample_posts > 0,
-        "has_live_data": live_posts > 0,
     }
 
 
 @app.post("/api/discover/run", response_model=DiscoveryResult)
 async def discover(request: DiscoveryRequest, _: str = Depends(require_auth), db: Session = Depends(get_db)) -> dict:
-    mode = request.mode or settings.discovery_mode
-    if mode == "sample":
-        users, posts, tasks = run_sample_discovery(db)
-        return {"mode": mode, "users_upserted": users, "posts_upserted": posts, "tasks_created": tasks, "warnings": []}
+    mode = request.mode or "x_api"
     if mode == "x_api":
         try:
             users, posts, tasks, warnings = await run_x_discovery(db, request.queries, request.max_results)
@@ -88,17 +81,50 @@ async def discover(request: DiscoveryRequest, _: str = Depends(require_auth), db
     raise HTTPException(status_code=400, detail="Unsupported discovery mode")
 
 
+@app.delete("/api/sample-data", response_model=CleanupResult)
+def delete_sample_data(_: str = Depends(require_auth), db: Session = Depends(get_db)) -> dict:
+    sample_posts = db.scalars(select(XPost).where(XPost.query_source == "sample")).all()
+    sample_post_ids = {post.x_post_id for post in sample_posts}
+    sample_author_ids = {post.author_id for post in sample_posts}
+
+    tasks = db.scalars(select(EngagementTask).where(EngagementTask.source_post_id.in_(sample_post_ids))).all() if sample_post_ids else []
+    for task in tasks:
+        db.delete(task)
+    for post in sample_posts:
+        db.delete(post)
+    db.flush()
+
+    users_deleted = 0
+    for user_id in sample_author_ids:
+        remaining_posts = db.scalar(select(func.count(XPost.id)).where(XPost.author_id == user_id)) or 0
+        if remaining_posts:
+            continue
+        for model in (LeadScore, DmEligibility):
+            record = db.scalar(select(model).where(model.user_id == user_id))
+            if record:
+                db.delete(record)
+        user = db.get(XUser, user_id)
+        if user:
+            db.delete(user)
+            users_deleted += 1
+
+    db.add(AuditEvent(action="sample.cleanup", entity_type="sample_data", entity_id="sample", detail=f"Deleted {len(sample_posts)} sample posts"))
+    db.commit()
+    return {"sample_posts_deleted": len(sample_posts), "tasks_deleted": len(tasks), "users_deleted": users_deleted}
+
+
 @app.get("/api/leads", response_model=list[LeadCandidateOut])
 def leads(_: str = Depends(require_auth), db: Session = Depends(get_db)) -> list[dict]:
     users = db.scalars(
         select(XUser)
         .options(joinedload(XUser.score), joinedload(XUser.dm_eligibility))
+        .where(XUser.id.in_(select(XPost.author_id).where(XPost.query_source != "sample").distinct()))
         .outerjoin(LeadScore)
         .order_by(func.coalesce(LeadScore.final_score, 0).desc())
     ).unique().all()
     output = []
     for user in users:
-        posts = db.scalars(select(XPost).where(XPost.author_id == user.id).order_by(XPost.created_at.desc()).limit(3)).all()
+        posts = db.scalars(select(XPost).where(XPost.author_id == user.id, XPost.query_source != "sample").order_by(XPost.created_at.desc()).limit(3)).all()
         open_tasks = db.scalar(
             select(func.count(EngagementTask.id)).where(
                 EngagementTask.user_id == user.id,
@@ -111,9 +137,14 @@ def leads(_: str = Depends(require_auth), db: Session = Depends(get_db)) -> list
 
 @app.get("/api/tasks", response_model=list[TaskOut])
 def tasks(status: TaskStatus | None = None, task_type: TaskType | None = None, _: str = Depends(require_auth), db: Session = Depends(get_db)) -> list[dict]:
-    query = select(EngagementTask).options(
-        joinedload(EngagementTask.user).joinedload(XUser.score),
-        joinedload(EngagementTask.user).joinedload(XUser.dm_eligibility),
+    query = (
+        select(EngagementTask)
+        .join(XPost, EngagementTask.source_post_id == XPost.x_post_id)
+        .where(XPost.query_source != "sample")
+        .options(
+            joinedload(EngagementTask.user).joinedload(XUser.score),
+            joinedload(EngagementTask.user).joinedload(XUser.dm_eligibility),
+        )
     )
     if status:
         query = query.where(EngagementTask.status == status)
