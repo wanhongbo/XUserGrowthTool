@@ -4,7 +4,7 @@ Compliance-first Web App for discovering active users in Privacy, Signal, Proton
 
 ## What It Does
 
-- Pulls recent public posts through the official X API.
+- Pulls recent public posts through the official X API, scoped by default to US-tagged posts about private/encrypted photo storage.
 - Scores users by relevance, activity, influence, intent, and risk.
 - Generates public interaction tasks and DM drafts.
 - Enforces strict DM eligibility before any DM draft can enter the queue.
@@ -57,6 +57,8 @@ DISCOVERY_MODE=x_api
 Without an X token, the app uses seeded sample data so the workflow can be tested locally.
 
 All `/api/*` business endpoints require login. The first MVP gate accepts only the email configured in `ALLOWED_LOGIN_EMAIL` and issues a signed bearer token.
+
+Default live discovery focuses on US posts by using X Search's `place_country:US` operator. This is precise but may return fewer results because many posts are not location-tagged.
 
 If the backend machine cannot reach X directly, set an outbound proxy:
 
