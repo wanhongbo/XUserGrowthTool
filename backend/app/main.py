@@ -57,6 +57,8 @@ def overview(_: str = Depends(require_auth), db: Session = Depends(get_db)) -> d
     dm_tasks = db.scalar(select(func.count(EngagementTask.id)).where(EngagementTask.task_type == TaskType.dm_draft)) or 0
     opt_outs = db.scalar(select(func.count(XUser.id)).where(XUser.opt_out.is_(True))) or 0
     compliance_blocks = db.scalar(select(func.count(DmEligibility.id)).where(DmEligibility.is_eligible.is_(False))) or 0
+    sample_posts = db.scalar(select(func.count(XPost.id)).where(XPost.query_source == "sample")) or 0
+    live_posts = db.scalar(select(func.count(XPost.id)).where(XPost.query_source != "sample")) or 0
     return {
         "leads": leads,
         "review_tasks": review_tasks,
@@ -64,6 +66,10 @@ def overview(_: str = Depends(require_auth), db: Session = Depends(get_db)) -> d
         "dm_tasks": dm_tasks,
         "opt_outs": opt_outs,
         "compliance_blocks": compliance_blocks,
+        "sample_posts": sample_posts,
+        "live_posts": live_posts,
+        "has_sample_data": sample_posts > 0,
+        "has_live_data": live_posts > 0,
     }
 
 

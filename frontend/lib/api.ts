@@ -73,6 +73,10 @@ export type Overview = {
   dm_tasks: number;
   opt_outs: number;
   compliance_blocks: number;
+  sample_posts: number;
+  live_posts: number;
+  has_sample_data: boolean;
+  has_live_data: boolean;
 };
 
 export type Session = {
@@ -170,6 +174,13 @@ export function runSampleDiscovery() {
   return request<{ users_upserted: number; posts_upserted: number; tasks_created: number; warnings: string[] }>("/api/discover/run", {
     method: "POST",
     body: JSON.stringify({ mode: "sample" }),
+  });
+}
+
+export function runLiveDiscovery() {
+  return request<{ users_upserted: number; posts_upserted: number; tasks_created: number; warnings: string[] }>("/api/discover/run", {
+    method: "POST",
+    body: JSON.stringify({ mode: "x_api", max_results: 10 }),
   });
 }
 

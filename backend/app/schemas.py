@@ -119,3 +119,7 @@ class OverviewOut(BaseModel):
     dm_tasks: int
     opt_outs: int
     compliance_blocks: int
+    sample_posts: int
+    live_posts: int
+    has_sample_data: bool
+    has_live_data: bool
