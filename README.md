@@ -49,6 +49,7 @@ For live X API discovery, set:
 ```bash
 ALLOWED_LOGIN_EMAIL=wanhongbo137@gmail.com
 AUTH_SECRET=replace-with-a-long-random-secret
+FRONTEND_ORIGINS=http://localhost:3000,https://your-frontend.onrender.com
 X_BEARER_TOKEN=...
 DISCOVERY_MODE=x_api
 ```

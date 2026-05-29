@@ -4,7 +4,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.auth import create_token, require_auth
-from app.config import get_settings
+from app.config import get_cors_origins, get_settings
 from app.database import Base, engine, get_db
 from app.models import AuditEvent, DmEligibility, EngagementTask, LeadScore, TaskStatus, TaskType, XPost, XUser
 from app.schemas import AuthOut, DiscoveryRequest, DiscoveryResult, LeadCandidateOut, LoginRequest, OptOutRequest, OverviewOut, TaskOut, TaskUpdate
@@ -20,7 +20,7 @@ settings = get_settings()
 app = FastAPI(title=settings.app_name)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.frontend_origin, "http://127.0.0.1:3000"],
+    allow_origins=get_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

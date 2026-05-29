@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     app_name: str = "X Circle Operator"
     database_url: str = "sqlite:///./usergrowth.db"
     frontend_origin: str = "http://localhost:3000"
+    frontend_origins: str = ""
     allowed_login_email: str = "wanhongbo137@gmail.com"
     auth_secret: str = "change-me-in-production"
     auth_token_ttl_seconds: int = 604800
@@ -22,3 +23,11 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+def get_cors_origins() -> list[str]:
+    settings = get_settings()
+    configured = settings.frontend_origins or settings.frontend_origin
+    origins = {origin.strip().rstrip("/") for origin in configured.split(",") if origin.strip()}
+    origins.update({"http://localhost:3000", "http://127.0.0.1:3000"})
+    return sorted(origins)
