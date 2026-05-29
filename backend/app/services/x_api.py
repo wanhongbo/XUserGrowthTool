@@ -5,6 +5,8 @@ from typing import Any
 
 import httpx
 
+from app.config import get_settings
+
 
 DEFAULT_QUERIES = [
     '(privacy OR "data broker" OR surveillance OR "threat model") lang:en -is:retweet',
@@ -34,8 +36,16 @@ class XApiClient:
             "user.fields": "id,name,username,description,public_metrics,verified,verified_type,receives_your_dm,created_at,protected,url,location,profile_image_url",
         }
         headers = {"Authorization": f"Bearer {self.bearer_token}"}
-        async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.get(f"{self.base_url}/tweets/search/recent", params=params, headers=headers)
+        try:
+            proxy = get_settings().outbound_proxy or None
+            async with httpx.AsyncClient(timeout=30, proxy=proxy) as client:
+                response = await client.get(f"{self.base_url}/tweets/search/recent", params=params, headers=headers)
+        except httpx.ConnectTimeout as exc:
+            raise XApiError("Timed out connecting to X API. Check network/VPN/proxy access to api.x.com.") from exc
+        except httpx.TimeoutException as exc:
+            raise XApiError("Timed out waiting for X API response. Retry later or reduce query volume.") from exc
+        except httpx.HTTPError as exc:
+            raise XApiError(f"Could not reach X API: {exc}") from exc
         if response.status_code == 429:
             raise XApiError("X API rate limit reached; retry later")
         if response.status_code >= 400:
@@ -51,4 +61,3 @@ def parse_x_datetime(value: str | None) -> datetime:
         return datetime.fromisoformat(normalized).replace(tzinfo=None)
     except ValueError:
         return datetime.utcnow()
-

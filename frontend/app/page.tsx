@@ -8,6 +8,8 @@ import {
   DatabaseZap,
   FileText,
   Inbox,
+  LogOut,
+  Mail,
   MessageSquareText,
   RefreshCw,
   ShieldCheck,
@@ -15,12 +17,17 @@ import {
   XCircle,
 } from "lucide-react";
 import {
+  AuthError,
   EngagementTask,
   LeadCandidate,
   Overview,
+  getMe,
   getLeads,
   getOverview,
+  getStoredSession,
   getTasks,
+  login,
+  logout,
   optOut,
   regenerateDraft,
   runSampleDiscovery,
@@ -41,8 +48,14 @@ export default function Home() {
   const [tasks, setTasks] = useState<EngagementTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState("");
+  const [sessionEmail, setSessionEmail] = useState<string | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
 
   async function refresh() {
+    if (!getStoredSession()) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const [overviewData, leadData, taskData] = await Promise.all([getOverview(), getLeads(), getTasks()]);
@@ -50,6 +63,11 @@ export default function Home() {
       setLeads(leadData);
       setTasks(taskData);
     } catch (error) {
+      if (error instanceof AuthError) {
+        setSessionEmail(null);
+        setNotice("Session expired. Please sign in again.");
+        return;
+      }
       setNotice(error instanceof Error ? error.message : "Unable to load workspace");
     } finally {
       setLoading(false);
@@ -57,7 +75,23 @@ export default function Home() {
   }
 
   useEffect(() => {
-    refresh();
+    const stored = getStoredSession();
+    if (!stored) {
+      setAuthChecked(true);
+      setLoading(false);
+      return;
+    }
+    getMe()
+      .then((me) => {
+        setSessionEmail(me.email);
+        return refresh();
+      })
+      .catch(() => {
+        setSessionEmail(null);
+      })
+      .finally(() => {
+        setAuthChecked(true);
+      });
   }, []);
 
   const topLeads = useMemo(() => leads.slice(0, 8), [leads]);
@@ -70,6 +104,11 @@ export default function Home() {
       setNotice(`Discovery complete: ${result.users_upserted} users, ${result.posts_upserted} posts, ${result.tasks_created} new tasks.`);
       await refresh();
     } catch (error) {
+      if (error instanceof AuthError) {
+        setSessionEmail(null);
+        setNotice("Session expired. Please sign in again.");
+        return;
+      }
       setNotice(error instanceof Error ? error.message : "Discovery failed");
     }
   }
@@ -79,6 +118,11 @@ export default function Home() {
       await updateTask(task.id, { status });
       await refresh();
     } catch (error) {
+      if (error instanceof AuthError) {
+        setSessionEmail(null);
+        setNotice("Session expired. Please sign in again.");
+        return;
+      }
       setNotice(error instanceof Error ? error.message : "Task update failed");
     }
   }
@@ -91,6 +135,30 @@ export default function Home() {
   async function blockUser(task: EngagementTask) {
     await optOut(task.user.x_user_id, "Manual opt-out from operator queue");
     await refresh();
+  }
+
+  async function handleLogin(email: string) {
+    setNotice("");
+    const session = await login(email);
+    setSessionEmail(session.email);
+    await refresh();
+  }
+
+  function handleLogout() {
+    logout();
+    setSessionEmail(null);
+    setOverview(null);
+    setLeads([]);
+    setTasks([]);
+    setNotice("");
+  }
+
+  if (!authChecked) {
+    return <main className="login-shell"><div className="empty">Checking session...</div></main>;
+  }
+
+  if (!sessionEmail) {
+    return <LoginScreen onLogin={handleLogin} notice={notice} />;
   }
 
   return (
@@ -123,6 +191,10 @@ export default function Home() {
             <button className="secondary-button" type="button" onClick={refresh} disabled={loading}>
               <RefreshCw size={17} aria-hidden="true" />
               Refresh
+            </button>
+            <button className="secondary-button" type="button" onClick={handleLogout}>
+              <LogOut size={17} aria-hidden="true" />
+              Sign out
             </button>
             <button className="primary-button" type="button" onClick={seed}>
               <DatabaseZap size={17} aria-hidden="true" />
@@ -190,6 +262,55 @@ export default function Home() {
           </section>
         </div>
       </section>
+    </main>
+  );
+}
+
+function LoginScreen({ onLogin, notice }: { onLogin: (email: string) => Promise<void>; notice: string }) {
+  const [email, setEmail] = useState("wanhongbo137@gmail.com");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSubmitting(true);
+    setError("");
+    try {
+      await onLogin(email);
+    } catch (loginError) {
+      setError(loginError instanceof Error ? loginError.message : "Unable to sign in");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <main className="login-shell">
+      <form className="login-panel" onSubmit={submit}>
+        <div className="badge good">
+          <ShieldCheck size={14} aria-hidden="true" />
+          Private operator console
+        </div>
+        <h1>Sign in to X Circle Operator</h1>
+        <p className="muted">Access is restricted to the approved operator email.</p>
+        <label className="field">
+          <span>Email</span>
+          <div className="input-wrap">
+            <Mail size={18} aria-hidden="true" />
+            <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" autoComplete="email" required />
+          </div>
+        </label>
+        {notice || error ? (
+          <div className="policy-band">
+            <AlertTriangle size={20} aria-hidden="true" />
+            <p>{error || notice}</p>
+          </div>
+        ) : null}
+        <button className="primary-button" type="submit" disabled={submitting}>
+          <ShieldCheck size={17} aria-hidden="true" />
+          {submitting ? "Signing in..." : "Sign in"}
+        </button>
+      </form>
     </main>
   );
 }

@@ -12,6 +12,16 @@ class DiscoveryRequest(BaseModel):
     max_results: int = Field(default=25, ge=10, le=100)
 
 
+class LoginRequest(BaseModel):
+    email: str
+
+
+class AuthOut(BaseModel):
+    email: str
+    token: str
+    expires_in: int
+
+
 class DiscoveryResult(BaseModel):
     mode: str
     users_upserted: int
@@ -109,4 +119,3 @@ class OverviewOut(BaseModel):
     dm_tasks: int
     opt_outs: int
     compliance_blocks: int
-

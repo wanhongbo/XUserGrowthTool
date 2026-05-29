@@ -47,9 +47,20 @@ The backend defaults to SQLite at `backend/usergrowth.db`.
 For live X API discovery, set:
 
 ```bash
+ALLOWED_LOGIN_EMAIL=wanhongbo137@gmail.com
+AUTH_SECRET=replace-with-a-long-random-secret
 X_BEARER_TOKEN=...
 DISCOVERY_MODE=x_api
 ```
 
 Without an X token, the app uses seeded sample data so the workflow can be tested locally.
 
+All `/api/*` business endpoints require login. The first MVP gate accepts only the email configured in `ALLOWED_LOGIN_EMAIL` and issues a signed bearer token.
+
+If the backend machine cannot reach X directly, set an outbound proxy:
+
+```bash
+OUTBOUND_PROXY=http://127.0.0.1:7890
+```
+
+Restart the backend after changing `.env`.

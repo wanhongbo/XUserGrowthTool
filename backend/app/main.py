@@ -3,13 +3,15 @@ from sqlalchemy.orm import Session, joinedload
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.auth import create_token, require_auth
 from app.config import get_settings
 from app.database import Base, engine, get_db
 from app.models import AuditEvent, DmEligibility, EngagementTask, LeadScore, TaskStatus, TaskType, XPost, XUser
-from app.schemas import DiscoveryRequest, DiscoveryResult, LeadCandidateOut, OptOutRequest, OverviewOut, TaskOut, TaskUpdate
+from app.schemas import AuthOut, DiscoveryRequest, DiscoveryResult, LeadCandidateOut, LoginRequest, OptOutRequest, OverviewOut, TaskOut, TaskUpdate
 from app.serializers import post_out, task_out, user_out
 from app.services.discovery import run_sample_discovery, run_x_discovery
 from app.services.drafts import draft_for_task
+from app.services.x_api import XApiError
 
 
 Base.metadata.create_all(bind=engine)
@@ -30,8 +32,25 @@ def health() -> dict:
     return {"ok": True, "app": settings.app_name}
 
 
+@app.post("/api/auth/login", response_model=AuthOut)
+def login(request: LoginRequest) -> dict:
+    email = request.email.strip().lower()
+    if email != settings.allowed_login_email.lower():
+        raise HTTPException(status_code=403, detail="This email is not allowed")
+    return {
+        "email": email,
+        "token": create_token(email),
+        "expires_in": settings.auth_token_ttl_seconds,
+    }
+
+
+@app.get("/api/auth/me")
+def me(email: str = Depends(require_auth)) -> dict:
+    return {"email": email}
+
+
 @app.get("/api/overview", response_model=OverviewOut)
-def overview(db: Session = Depends(get_db)) -> dict:
+def overview(_: str = Depends(require_auth), db: Session = Depends(get_db)) -> dict:
     leads = db.scalar(select(func.count(XUser.id))) or 0
     review_tasks = db.scalar(select(func.count(EngagementTask.id)).where(EngagementTask.status == TaskStatus.review)) or 0
     public_tasks = db.scalar(select(func.count(EngagementTask.id)).where(EngagementTask.task_type == TaskType.public_interaction)) or 0
@@ -49,19 +68,22 @@ def overview(db: Session = Depends(get_db)) -> dict:
 
 
 @app.post("/api/discover/run", response_model=DiscoveryResult)
-async def discover(request: DiscoveryRequest, db: Session = Depends(get_db)) -> dict:
+async def discover(request: DiscoveryRequest, _: str = Depends(require_auth), db: Session = Depends(get_db)) -> dict:
     mode = request.mode or settings.discovery_mode
     if mode == "sample":
         users, posts, tasks = run_sample_discovery(db)
         return {"mode": mode, "users_upserted": users, "posts_upserted": posts, "tasks_created": tasks, "warnings": []}
     if mode == "x_api":
-        users, posts, tasks, warnings = await run_x_discovery(db, request.queries, request.max_results)
+        try:
+            users, posts, tasks, warnings = await run_x_discovery(db, request.queries, request.max_results)
+        except XApiError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
         return {"mode": mode, "users_upserted": users, "posts_upserted": posts, "tasks_created": tasks, "warnings": warnings}
     raise HTTPException(status_code=400, detail="Unsupported discovery mode")
 
 
 @app.get("/api/leads", response_model=list[LeadCandidateOut])
-def leads(db: Session = Depends(get_db)) -> list[dict]:
+def leads(_: str = Depends(require_auth), db: Session = Depends(get_db)) -> list[dict]:
     users = db.scalars(
         select(XUser)
         .options(joinedload(XUser.score), joinedload(XUser.dm_eligibility))
@@ -82,7 +104,7 @@ def leads(db: Session = Depends(get_db)) -> list[dict]:
 
 
 @app.get("/api/tasks", response_model=list[TaskOut])
-def tasks(status: TaskStatus | None = None, task_type: TaskType | None = None, db: Session = Depends(get_db)) -> list[dict]:
+def tasks(status: TaskStatus | None = None, task_type: TaskType | None = None, _: str = Depends(require_auth), db: Session = Depends(get_db)) -> list[dict]:
     query = select(EngagementTask).options(
         joinedload(EngagementTask.user).joinedload(XUser.score),
         joinedload(EngagementTask.user).joinedload(XUser.dm_eligibility),
@@ -100,7 +122,7 @@ def tasks(status: TaskStatus | None = None, task_type: TaskType | None = None, d
 
 
 @app.patch("/api/tasks/{task_id}", response_model=TaskOut)
-def update_task(task_id: int, update: TaskUpdate, db: Session = Depends(get_db)) -> dict:
+def update_task(task_id: int, update: TaskUpdate, _: str = Depends(require_auth), db: Session = Depends(get_db)) -> dict:
     task = db.scalar(
         select(EngagementTask)
         .where(EngagementTask.id == task_id)
@@ -128,7 +150,7 @@ def update_task(task_id: int, update: TaskUpdate, db: Session = Depends(get_db))
 
 
 @app.post("/api/tasks/{task_id}/generate-draft", response_model=TaskOut)
-def regenerate_draft(task_id: int, actor: str = "operator", db: Session = Depends(get_db)) -> dict:
+def regenerate_draft(task_id: int, actor: str = "operator", _: str = Depends(require_auth), db: Session = Depends(get_db)) -> dict:
     task = db.scalar(
         select(EngagementTask)
         .where(EngagementTask.id == task_id)
@@ -149,7 +171,7 @@ def regenerate_draft(task_id: int, actor: str = "operator", db: Session = Depend
 
 
 @app.post("/api/opt-outs")
-def opt_out(request: OptOutRequest, db: Session = Depends(get_db)) -> dict:
+def opt_out(request: OptOutRequest, _: str = Depends(require_auth), db: Session = Depends(get_db)) -> dict:
     user = db.scalar(select(XUser).where(XUser.x_user_id == request.x_user_id))
     if not user:
         raise HTTPException(status_code=404, detail="User not found")

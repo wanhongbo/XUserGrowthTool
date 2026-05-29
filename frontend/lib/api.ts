@@ -75,22 +75,83 @@ export type Overview = {
   compliance_blocks: number;
 };
 
+export type Session = {
+  email: string;
+  token: string;
+  expires_in: number;
+};
+
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+const TOKEN_KEY = "x-circle-operator-token";
+const EMAIL_KEY = "x-circle-operator-email";
+
+export class AuthError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AuthError";
+  }
+}
+
+export function getStoredSession(): { email: string; token: string } | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  const token = window.localStorage.getItem(TOKEN_KEY);
+  const email = window.localStorage.getItem(EMAIL_KEY);
+  return token && email ? { email, token } : null;
+}
+
+export function clearStoredSession() {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.removeItem(TOKEN_KEY);
+  window.localStorage.removeItem(EMAIL_KEY);
+}
+
+function storeSession(session: Session) {
+  window.localStorage.setItem(TOKEN_KEY, session.token);
+  window.localStorage.setItem(EMAIL_KEY, session.email);
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const stored = getStoredSession();
   const response = await fetch(`${API_BASE}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
+      ...(stored?.token ? { Authorization: `Bearer ${stored.token}` } : {}),
       ...(init?.headers ?? {}),
     },
     cache: "no-store",
   });
+  if (response.status === 401 || response.status === 403) {
+    clearStoredSession();
+    const message = await response.text();
+    throw new AuthError(message || "Authentication required");
+  }
   if (!response.ok) {
     const message = await response.text();
     throw new Error(message || `Request failed: ${response.status}`);
   }
   return response.json() as Promise<T>;
+}
+
+export async function login(email: string) {
+  const session = await request<Session>("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+  storeSession(session);
+  return session;
+}
+
+export function logout() {
+  clearStoredSession();
+}
+
+export function getMe() {
+  return request<{ email: string }>("/api/auth/me");
 }
 
 export function getOverview() {
@@ -131,4 +192,3 @@ export function optOut(xUserId: string, reason: string) {
     body: JSON.stringify({ x_user_id: xUserId, reason, actor: "operator" }),
   });
 }
-
