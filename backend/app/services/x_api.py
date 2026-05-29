@@ -1,0 +1,54 @@
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any
+
+import httpx
+
+
+DEFAULT_QUERIES = [
+    '(privacy OR "data broker" OR surveillance OR "threat model") lang:en -is:retweet',
+    '(Signal OR Proton OR "end-to-end encryption" OR e2ee) lang:en -is:retweet',
+    '(cybersecurity OR infosec OR "zero knowledge") lang:en -is:retweet',
+]
+
+
+class XApiError(RuntimeError):
+    pass
+
+
+class XApiClient:
+    def __init__(self, bearer_token: str):
+        self.bearer_token = bearer_token
+        self.base_url = "https://api.x.com/2"
+
+    async def recent_search(self, query: str, max_results: int = 25) -> dict[str, Any]:
+        if not self.bearer_token:
+            raise XApiError("X_BEARER_TOKEN is not configured")
+
+        params = {
+            "query": query,
+            "max_results": max(10, min(max_results, 100)),
+            "tweet.fields": "author_id,created_at,public_metrics,lang,conversation_id,referenced_tweets",
+            "expansions": "author_id",
+            "user.fields": "id,name,username,description,public_metrics,verified,verified_type,receives_your_dm,created_at,protected,url,location,profile_image_url",
+        }
+        headers = {"Authorization": f"Bearer {self.bearer_token}"}
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.get(f"{self.base_url}/tweets/search/recent", params=params, headers=headers)
+        if response.status_code == 429:
+            raise XApiError("X API rate limit reached; retry later")
+        if response.status_code >= 400:
+            raise XApiError(f"X API error {response.status_code}: {response.text[:300]}")
+        return response.json()
+
+
+def parse_x_datetime(value: str | None) -> datetime:
+    if not value:
+        return datetime.utcnow()
+    normalized = value.replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(normalized).replace(tzinfo=None)
+    except ValueError:
+        return datetime.utcnow()
+
