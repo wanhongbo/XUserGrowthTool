@@ -1,5 +1,6 @@
 from datetime import datetime
 from enum import StrEnum
+from typing import Optional
 
 from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -45,8 +46,8 @@ class XUser(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     posts: Mapped[list["XPost"]] = relationship(back_populates="author")
-    score: Mapped["LeadScore | None"] = relationship(back_populates="user", uselist=False)
-    dm_eligibility: Mapped["DmEligibility | None"] = relationship(back_populates="user", uselist=False)
+    score: Mapped[Optional["LeadScore"]] = relationship(back_populates="user", uselist=False)
+    dm_eligibility: Mapped[Optional["DmEligibility"]] = relationship(back_populates="user", uselist=False)
     tasks: Mapped[list["EngagementTask"]] = relationship(back_populates="user")
 
 
@@ -94,7 +95,7 @@ class DmEligibility(Base):
     reason: Mapped[str] = mapped_column(Text, default="")
     evidence_post_id: Mapped[str] = mapped_column(String(64), default="")
     opt_out: Mapped[bool] = mapped_column(Boolean, default=False)
-    last_contacted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_contacted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     user: Mapped[XUser] = relationship(back_populates="dm_eligibility")
@@ -129,4 +130,3 @@ class AuditEvent(Base):
     entity_id: Mapped[str] = mapped_column(String(64))
     detail: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-
